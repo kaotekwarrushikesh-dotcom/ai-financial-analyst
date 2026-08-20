@@ -1,0 +1,14 @@
+# The three financial engines, installed from source rather than vendored. This is the
+# whole point of Phase 1: the AI analyst calls their real functions, so a fix in an engine
+# reaches the analyst without anything being copied between repos.
+git+https://github.com/kaotekwarrushikesh-dotcom/financial-statement-intelligence.git@main#egg=financial-statement-intelligence
+git+https://github.com/kaotekwarrushikesh-dotcom/valuation-engine.git@main#egg=valuation-engine
+git+https://github.com/kaotekwarrushikesh-dotcom/risk-engine.git@main#egg=risk-engine
+
+# Core
+pandas>=2.0
+numpy>=1.24
+scipy>=1.11
+
+# Tests
+pytest>=8.0
