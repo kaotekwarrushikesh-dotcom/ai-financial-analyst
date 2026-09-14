@@ -3,11 +3,13 @@
 > An AI-powered financial analyst that researches companies, interprets financial data,
 > evaluates valuation and risk, and produces evidence-backed investment insights.
 
-**Status: Phase 1 of 16 built and tested.** Modules 1, 2 and 3 are integrated behind a single
-tool interface: 16 financial tools, every one of them a real function ending in a
-deterministic calculation, each result tagged with where its numbers came from. The LLM agent,
-RAG, query router, report generation and dashboard are **not built yet**. This README says so
-rather than describing the finished system in the present tense. See [Roadmap](#roadmap).
+**Status: Phases 1 and 2 of 16 built and tested.** Modules 1, 2 and 3 are integrated behind a
+single tool interface: 16 financial tools, every one of them a real function ending in a
+deterministic calculation, each result tagged with where its numbers came from. Phase 2 adds
+the fetch cache underneath them, so a question that touches nine tools fetches five datasets
+instead of twenty. The LLM agent, RAG, query router, report generation and dashboard are **not
+built yet**. This README says so rather than describing the finished system in the present
+tense. See [Roadmap](#roadmap).
 
 The architecture this module exists to demonstrate:
 
@@ -138,7 +140,8 @@ tool works for more than one company.
 Phase 1 is done. The remaining phases follow the build order, each tested before the next
 begins.
 
-- **Phase 2** Live company and market data access
+- ~~**Phase 2** Live company and market data access~~ **built**: the fetch cache under all
+  three adapters
 - **Phase 3** Document ingestion (filings, transcripts, presentations)
 - **Phase 4** RAG retrieval with citations
 - **Phase 5** Remaining financial tools (peers, stress testing)
@@ -151,6 +154,62 @@ begins.
 - **Phase 15** AI evaluation (numerical accuracy, retrieval, citation, hallucination rate)
 - **Phase 16** Deployment
 
+## The fetch cache
+
+Phase 2. An agent answering one question well calls several tools about the same company in
+quick succession, and before this every one of them refetched. The cache sits at the four
+functions that actually reach the network, not at the tool layer above them:
+
+```
+module1._analysis    filings, ratios, health score
+module2._run         the valuation pipeline
+module3._prices      price history
+module3._returns     price history plus its log returns
+```
+
+Those four are the only places data enters this module. Caching there means every tool
+benefits without knowing about it, and no tool can bypass the cache by taking a different
+route to the same data. A test asserts that the set of wrapped seams is exactly those four, so
+a future adapter that grows a fifth way to reach the network fails the suite rather than
+quietly costing a fetch.
+
+Measured on a nine-tool sweep of one company (profile, health, ratios, trends, volatility,
+VaR, drawdown, expected shortfall, GARCH):
+
+| | Before | After |
+|---|---|---|
+| Calls reaching the fetch seams | 20 | 20 |
+| Actual fetches | 20 | 5 |
+| Hit rate | 0% | 75% |
+| Repeat sweep | full cost again | about 20x faster |
+
+The five remaining fetches are five genuinely different datasets: Module 1's analysis, plus
+price history at both 5y and 10y because different risk tools legitimately ask for different
+windows, and their log-return series.
+
+**On choosing the TTL.** The tempting move is to cache filings for a day, since a 10-K does not
+change between quarters. That is wrong here: Module 1's `Analysis` carries ten years of filed
+statements *and* a live share price in one object, so the whole thing inherits the share
+price's shelf life. A cache window is set by the freshest field in a payload, never the
+stalest. The default is 900 seconds, matching the `st.cache_data(ttl=900)` the deployed
+Streamlit apps already use, so a number does not have one staleness in the app and another
+here.
+
+**Failures are never cached.** A cached exception turns a momentary network blip into fifteen
+minutes of downtime, which is the wrong trade for data this cheap to retry.
+
+One subtlety worth recording, because it cost a duplicate fetch before it was found: different
+tools spell the same request differently, some passing `period` explicitly and some relying on
+its default. Keying on the raw arguments made those two distinct entries for identical data.
+Keys are now built by binding the call against the function's real signature and applying
+defaults, so every spelling of one request collapses onto one key.
+
+```python
+from src.data import cache
+cache.stats()        # per-seam hits, misses, hit rate
+cache.clear_all()    # force fresh reads
+```
+
 ## Known limitations so far
 
 1. **There is no AI in this module yet.** Phase 1 is the tool surface an agent will call. The
@@ -160,9 +219,10 @@ begins.
    valuation path instead: a DCF and scenarios with no comparables. The adapter falls back
    automatically and the result says which mode produced it, but it means comparables are
    currently unavailable through this interface for every company.
-3. **No caching layer.** Each tool call refetches, so a broad question that touches six tools
-   pays six times. Phase 2 addresses this; until then, latency is real and a full risk sweep
-   takes several seconds.
+3. ~~**No caching layer.**~~ **Fixed in Phase 2**, see [The fetch cache](#the-fetch-cache).
+   A nine-tool sweep now makes five fetches rather than twenty. What remains true is that the
+   cache is per-process and in-memory, so it helps within one session and does nothing across
+   restarts.
 4. **Peer comparison, stress testing and document search are not built.** They appear in the
    target tool list in the brief and are Phases 3 to 5.
 5. **The `live` tests depend on Yahoo Finance being reachable** and on specific tickers still

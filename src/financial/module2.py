@@ -16,6 +16,7 @@ a README the model will never read.
 
 from typing import Any
 
+from src.data.cache import cached
 from src.financial.provenance import DataStatus, Provenance, ToolResult
 
 CALIBRATION_WARNING = (
@@ -33,8 +34,14 @@ NO_COMPARABLES = (
 )
 
 
+@cached("module2.pipeline")
 def _run(query: str, horizon: int = 5):
-    """Curated workflow where the company is in it, live fetch otherwise."""
+    """Curated workflow where the company is in it, live fetch otherwise.
+
+    Cached because this is the most expensive seam in the module: a quick pipeline run fetches
+    statements, a market snapshot, a risk-free rate and five years of index history, then
+    solves a DCF, scenarios and a Monte Carlo on top. Two tools call it for the same company.
+    """
     from valuation_engine import pipeline
     from valuation_engine.universe import NIFTY_UNIVERSE
 

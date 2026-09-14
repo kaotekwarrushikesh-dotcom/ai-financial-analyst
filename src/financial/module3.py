@@ -17,6 +17,7 @@ because they change how a number should be read and the model will not know othe
     rather than today's volatility regime.
 """
 
+from src.data.cache import cached
 from src.financial.provenance import DataStatus, Provenance, ToolResult
 
 DEFAULT_PERIOD = "5y"
@@ -29,13 +30,21 @@ UNCONDITIONAL_WARNING = (
 )
 
 
+@cached("module3.prices")
 def _prices(ticker: str, period: str = DEFAULT_PERIOD):
+    """Every risk tool reads price history through here, and there are seven of them. This is
+    the seam where the "a sweep pays six times" problem was most expensive."""
     from risk_engine.data_loader import clean_prices, fetch_prices
     frame, status = fetch_prices(ticker, period=period)
     return clean_prices(frame), status
 
 
+@cached("module3.returns")
 def _returns(ticker: str, period: str = DEFAULT_PERIOD):
+    """Cached separately from `_prices` even though it calls it. The fetch is already saved by
+    the cache below it; what this additionally saves is recomputing the log-return series for
+    each of the seven risk tools, which is pure arithmetic but not free on ten years of daily
+    data."""
     from risk_engine.returns import log_returns
     frame, status = _prices(ticker, period)
     return log_returns(frame["adj_close"]), frame, status

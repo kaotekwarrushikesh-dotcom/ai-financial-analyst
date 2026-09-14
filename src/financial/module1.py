@@ -14,6 +14,7 @@ Module 1 has no reason to care about it.
 
 from typing import Any
 
+from src.data.cache import cached
 from src.financial.provenance import DataStatus, Provenance, ToolResult
 
 # Metrics reported as filed values rather than derived ones, so they carry SOURCE_FACT.
@@ -23,7 +24,10 @@ FILED_COLUMNS = {
 }
 
 
+@cached("module1.analysis")
 def _analysis(query: str):
+    """The single point where Module 1 data enters this module, so it is also the single
+    point worth caching: every tool below reads through here."""
     from fsi.company import analyse
     return analyse(query)
 
